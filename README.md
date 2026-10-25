@@ -1,11 +1,15 @@
 # AllNetworkManager
 
+[![build](https://github.com/FoxxoOwO/AllNetworkManager/actions/workflows/build.yml/badge.svg)](https://github.com/FoxxoOwO/AllNetworkManager/actions/workflows/build.yml)
+
 Unified network device manager for Windows. Goal: one app that covers what Bosch Configuration Manager,
 Hanwha Wisenet Device Manager, Axis Device Manager, MikroTik WinBox and Microsens MsSwitchIpConfig do today.
 
-Vendor reference binaries live in this folder (`ConfigManager/`, `Wisenet Device Manager/`, `winbox/`,
-`microsens/`, `WiseDetector/`) and are used only as protocol reference — the app itself talks to devices
-over public APIs (ONVIF / WS-Discovery / SSDP / MNDP / ISAPI) first, vendor SDKs only where essential.
+Vendor reference binaries live next to the repository on the development machine (`ConfigManager/`,
+`Wisenet Device Manager/`, `winbox/`, `microsens/`, `WiseDetector/`) and are used only as a protocol reference —
+they are not committed and are not a runtime dependency. The app talks to devices over public APIs
+(ONVIF / WS-Discovery / SSDP / MNDP / ISAPI / SUNAPI / VAPIX / RouterOS API) first, vendor SDKs only where
+essential.
 
 ## Status
 
@@ -100,6 +104,34 @@ enabled, port-scan fallback) and the Bosch SDK path (`Bosch:SdkPath`, default po
   `microsens.hostname` on MICROSENS); Bosch and plain ONVIF do not expose one, so `HostnameResolver` falls back
   to reverse DNS with a 2 s timeout. Resolved names are stored in `devices.json` and a rescan never overwrites
   them with an empty value.
+
+## Build & CI
+
+GitHub Actions (`.github/workflows/build.yml`) builds on every push to `main`, on every pull request and on
+manual dispatch, and publishes a downloadable artifact:
+
+| Artifact | Contents |
+|----------|----------|
+| `AllNetworkManager-win-x64` | framework-dependent build of the app (needs the .NET 10 Desktop Runtime) |
+
+Pushing a tag like `v0.1.0` additionally creates a GitHub release with a self-contained, runnable zip:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Locally the same steps are:
+
+```bash
+dotnet restore AllNetworkManager.slnx
+dotnet build   AllNetworkManager.slnx -c Release
+dotnet publish AllNetworkManager.App/AllNetworkManager.App.csproj -c Release -r win-x64 --self-contained false -o publish
+```
+
+The vendor reference tools (`ConfigManager/`, `winbox/`, `WiseDetector/`, `Wisenet Device Manager/`, `microsens/`)
+are deliberately not in the repository — they are proprietary binaries and only served as a protocol reference
+while the vendor layers were written.
+
 ## Storage: SQLite inventory
 
 The inventory lives in `%LOCALAPPDATA%\AllNetworkManager\inventory.db` (SQLite, WAL journal, schema v1),
