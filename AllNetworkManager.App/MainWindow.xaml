@@ -198,7 +198,51 @@
             <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Padding="12,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                        <TextBlock Text="Discovered Devices" FontWeight="SemiBold" FontSize="14"/>
+                        <StackPanel>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right"
+                                        Command="{Binding RefreshSubnetsCommand}"
+                                        Style="{StaticResource FlatButton}"
+                                        Padding="6,1"
+                                        FontSize="13"
+                                        ToolTip="Obnovit seznam síťových rozhraní"
+                                        Content="↻"/>
+                                <TextBlock Text="Discovered Devices" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+                            </DockPanel>
+
+                            <!-- Which network range to scan -->
+                            <ComboBox ItemsSource="{Binding Subnets}"
+                                      SelectedItem="{Binding SelectedSubnet, Mode=TwoWay}"
+                                      DisplayMemberPath="Display"
+                                      Margin="0,8,0,0"
+                                      ToolTip="Vyber síťovou kartu, jejíž rozsah se má prohledat"/>
+
+                            <DockPanel Margin="0,6,0,0"
+                                       Visibility="{Binding IsCustomTarget, Converter={StaticResource BoolToVis}}">
+                                <Button DockPanel.Dock="Right"
+                                        Command="{Binding ScanTargetCommand}"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Padding="10,6"
+                                        Margin="6,0,0,0"
+                                        Content="Prohledat"/>
+                                <TextBox Text="{Binding CustomRange, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="Např. 192.168.0.10-192.168.0.60, 192.168.0.10-60 nebo 10.0.0.0/24"/>
+                            </DockPanel>
+
+                            <TextBlock Text="např. 192.168.0.10-192.168.0.60 nebo 10.0.0.0/24"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Margin="2,4,0,0"
+                                       Visibility="{Binding IsCustomTarget, Converter={StaticResource BoolToVis}}"/>
+
+                            <CheckBox Content="Projít každou adresu (důkladné)"
+                                      IsChecked="{Binding DeepScan}"
+                                      Margin="0,6,0,0"
+                                      ToolTip="Kromě multicast discovery projde každou adresu rozsahu na běžných portech. Najde i zařízení, která se multicastem nehlásí."
+                                      Foreground="{StaticResource TextSecondaryBrush}"
+                                      Visibility="{Binding ShowsScanOptions, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
                     </Border>
 
                     <ListView x:Name="DeviceList"

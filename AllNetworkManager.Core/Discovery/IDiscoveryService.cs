@@ -10,6 +10,14 @@ public interface IDiscoveryService
     string[] SupportedProtocols { get; }
     Task<IEnumerable<DiscoveredDevice>> DiscoverAsync(CancellationToken ct = default);
     Task<IEnumerable<DiscoveredDevice>> DiscoverAsync(string subnet, CancellationToken ct = default);
+
+    /// <summary>
+    /// Scans the given targets — each one a CIDR subnet, an address range (192.168.0.10-192.168.0.60)
+    /// or a single address. With <paramref name="activeScan"/> every address is also probed on the
+    /// common service ports, which finds devices that do not answer multicast discovery.
+    /// </summary>
+    Task<IEnumerable<DiscoveredDevice>> DiscoverAsync(
+        IReadOnlyList<string> targets, bool activeScan, CancellationToken ct = default);
     Task<DiscoveredDevice?> DiscoverSingleAsync(string ipAddress, CancellationToken ct = default);
     event EventHandler<DiscoveredDevice> DeviceDiscovered;
     event EventHandler<DiscoveryProgress> ProgressChanged;

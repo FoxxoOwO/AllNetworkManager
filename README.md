@@ -105,6 +105,23 @@ enabled, port-scan fallback) and the Bosch SDK path (`Bosch:SdkPath`, default po
   to reverse DNS with a 2 s timeout. Resolved names are stored in `devices.json` and a rescan never overwrites
   them with an empty value.
 
+## Scan targets
+
+The device panel has a target selector above the list:
+
+| Choice | What happens |
+|--------|--------------|
+| **Všechna rozhraní (auto)** | every IPv4 subnet the discovery service detects (the original behaviour) |
+| **<card> · 192.168.0.0/24** | only that network card's subnet; the list is rebuilt with `↻` when a cable is plugged in |
+| **Vlastní rozsah…** | a typed target: `192.168.0.10-192.168.0.60`, the shorthand `192.168.0.10-60`, a CIDR such as `10.0.0.0/24` or a single address |
+
+`Projít každou adresu (důkladné)` adds an active TCP sweep on top of multicast discovery (ports 80, 443, 554,
+8000, 8080, 8728, 8291), which is what finds devices that never answer SSDP/WS-Discovery. Addresses are probed
+with bounded concurrency, so one dead host cannot stall the scan. Ranges are capped at 1024 addresses
+(a /22) and validated before the scan starts — a typo like `10.0.0.0/8` is rejected with an explanation.
+
+The auto-rescan timer repeats whatever target was scanned last.
+
 ## Build & CI
 
 GitHub Actions (`.github/workflows/build.yml`) builds on every push to `main`, on every pull request and on

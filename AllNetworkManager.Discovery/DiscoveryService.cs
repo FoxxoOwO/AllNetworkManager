@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.NetworkInformation;
+using AllNetworkManager.Core.Network;
 
 public class DiscoveryOptions
 {
@@ -18,6 +19,15 @@ public class DiscoveryOptions
     public bool EnableMndp { get; set; } = true;
     public bool EnablePortScan { get; set; } = false;
     public int[] CommonPorts { get; set; } = { 80, 443, 8080, 8728, 8729, 8291, 5678, 3702, 1900 };
+
+    /// <summary>Ports swept per address when the user asks for an explicit range or subnet.</summary>
+    public int[] ActiveScanPorts { get; set; } = { 80, 443, 554, 8000, 8080, 8728, 8291 };
+
+    /// <summary>Parallel address probes during an active scan.</summary>
+    public int ActiveScanConcurrency { get; set; } = 96;
+
+    /// <summary>Per-address probe budget during an active scan.</summary>
+    public int ActiveScanTimeoutMs { get; set; } = 700;
 }
 
 public class DiscoveryService : IDiscoveryService
@@ -44,19 +54,41 @@ public class DiscoveryService : IDiscoveryService
 
     public async Task<IEnumerable<DiscoveredDevice>> DiscoverAsync(CancellationToken ct = default)
     {
-        var subnets = await GetSubnetsToScanAsync(ct);
+        var subnets = await GetSubnetsToScanAsync(ct).ConfigureAwait(false);
+        return await DiscoverAsync(subnets, activeScan: false, ct).ConfigureAwait(false);
+    }
+
+    public async Task<IEnumerable<DiscoveredDevice>> DiscoverAsync(
+        IReadOnlyList<string> targets, bool activeScan, CancellationToken ct = default)
+    {
         var allDevices = new List<DiscoveredDevice>();
 
         // Dedupe inside a single run only. Keeping this across runs used to make every scan after the
         // first report zero devices (the dictionary was never cleared).
         var seen = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
+        var count = Math.Max(targets.Count, 1);
 
-        for (int i = 0; i < subnets.Length; i++)
+        for (int i = 0; i < targets.Count; i++)
         {
-            var subnet = subnets[i];
-            ReportProgress(subnet, allDevices.Count, i, subnets.Length, "Scanning subnet");
+            var target = targets[i];
+            ReportProgress(target, allDevices.Count, i, count, "Skenuji " + target);
 
-            foreach (var d in await DiscoverAsync(subnet, ct))
+            var found = (await DiscoverAsync(target, ct).ConfigureAwait(false)).ToList();
+
+            if (activeScan)
+            {
+                if (AddressRange.TryParse(target, out var addresses, out var error))
+                {
+                    ReportProgress(target, allDevices.Count, i, count, $"Procházím {addresses.Count} adres");
+                    found.AddRange(await SweepAsync(addresses, ct).ConfigureAwait(false));
+                }
+                else
+                {
+                    _logger.LogWarning("Nelze aktivně prohledat {Target}: {Error}", target, error);
+                }
+            }
+
+            foreach (var d in found)
             {
                 if (seen.TryGetValue(d.IpAddress, out var known))
                 {
@@ -71,11 +103,80 @@ public class DiscoveryService : IDiscoveryService
                 DeviceDiscovered?.Invoke(this, d);
             }
 
-            ReportProgress(subnet, allDevices.Count, i + 1, subnets.Length, "Subnet scanned");
+            ReportProgress(target, allDevices.Count, i + 1, count, "Hotovo " + target);
         }
 
-        ReportProgress("", allDevices.Count, subnets.Length, subnets.Length, "Complete");
+        ReportProgress("", allDevices.Count, targets.Count, targets.Count, "Complete");
         return allDevices;
+    }
+
+    /// <summary>
+    /// Probes every address on the active-scan ports. This is what finds devices that stay silent on
+    /// multicast (fixed IP, no SSDP/WS-Discovery, another VLAN), at the cost of a TCP sweep.
+    /// </summary>
+    private async Task<IReadOnlyList<DiscoveredDevice>> SweepAsync(
+        IReadOnlyList<string> addresses, CancellationToken ct)
+    {
+        if (addresses.Count == 0) return Array.Empty<DiscoveredDevice>();
+
+        var results = new System.Collections.Concurrent.ConcurrentBag<DiscoveredDevice>();
+        var gate = new SemaphoreSlim(Math.Max(1, _options.ActiveScanConcurrency));
+        var ports = _options.ActiveScanPorts;
+        var timeoutMs = Math.Max(100, _options.ActiveScanTimeoutMs);
+
+        var probes = addresses.Select(async ip =>
+        {
+            await gate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromMilliseconds(timeoutMs));
+
+                foreach (var port in ports)
+                {
+                    foreach (var protocol in _protocols.Where(p => p.SupportsPort(port)))
+                    {
+                        try
+                        {
+                            var device = await protocol.ProbeAsync(ip, port, timeout.Token).ConfigureAwait(false);
+                            if (device != null)
+                            {
+                                results.Add(device);
+                                return;
+                            }
+                        }
+                        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                        {
+                            // this address did not answer in time, move on
+                            return;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "Probe {Ip}:{Port} via {Protocol} failed", ip, port, protocol.ProtocolName);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }).ToList();
+
+        try
+        {
+            await Task.WhenAll(probes).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // the caller cancelled the scan; whatever was already found is still useful
+        }
+
+        return results.ToList();
     }
 
     public async Task<IEnumerable<DiscoveredDevice>> DiscoverAsync(string subnet, CancellationToken ct = default)

@@ -35,6 +35,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _rescanIntervalSeconds = 120;
     [ObservableProperty] private DeviceViewModel? _selectedDevice;
     [ObservableProperty] private string _storePath = "";
+    [ObservableProperty] private SubnetOption? _selectedSubnet;
+    [ObservableProperty] private string _customRange = "";
+    [ObservableProperty] private bool _deepScan = true;
 
     public ObservableCollection<DeviceViewModel> Devices { get; } = new();
     public ICollectionView FilteredDevices { get; }
@@ -45,6 +48,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand OpenWebInterfaceCommand { get; }
     public IAsyncRelayCommand PingCommand { get; }
     public IRelayCommand ExportCsvCommand { get; }
+    public ObservableCollection<SubnetOption> Subnets { get; } = new();
+    public IRelayCommand RefreshSubnetsCommand { get; }
+    public IAsyncRelayCommand ScanTargetCommand { get; }
+
+    private IReadOnlyList<string>? _lastTargets;
+    private bool _lastActiveScan;
 
     public MainViewModel(
         IDiscoveryService discoveryService,
@@ -71,10 +80,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         OpenWebInterfaceCommand = new AsyncRelayCommand(OpenWebInterfaceAsync, () => SelectedDevice?.WebInterfaceUrl != null);
         PingCommand = new AsyncRelayCommand(PingSelectedAsync, () => SelectedDevice != null);
         ExportCsvCommand = new RelayCommand(ExportCsv);
+        RefreshSubnetsCommand = new RelayCommand(RefreshSubnets);
+        ScanTargetCommand = new AsyncRelayCommand(ScanTargetAsync, () => !IsDiscovering);
 
         _store.Load();
         StorePath = _store.FilePath;
         SeedFromStore();
+
+        RefreshSubnets();
 
         _rescanTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(Math.Max(30, RescanIntervalSeconds)) };
         _rescanTimer.Tick += async (_, _) => await SilentRescanAsync();
@@ -154,17 +167,31 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (IsDiscovering) return;
 
+        if (!TryResolveTarget(out var targets, out var activeScan, out var problem))
+        {
+            DiscoveryStatus = problem;
+            return;
+        }
+
         IsDiscovering = true;
-        DiscoveryStatus = "Hledam zarizeni...";
+        _lastTargets = targets;
+        _lastActiveScan = activeScan;
+        DiscoveryStatus = targets == null
+            ? "Hledam zarizeni na vsech rozhranich..."
+            : $"Hledam zarizeni: {string.Join(", ", targets)}{(activeScan ? " (prochazim kazdou adresu)" : "")}";
         DiscoveryProgress = 0;
         DiscoverCommand.NotifyCanExecuteChanged();
+        ScanTargetCommand.NotifyCanExecuteChanged();
         StopDiscoveryCommand.NotifyCanExecuteChanged();
 
         try
         {
             _scanCts?.Dispose();
-            _scanCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-            var found = (await _discoveryService.DiscoverAsync(_scanCts.Token)).ToList();
+            _scanCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            var found = (targets == null
+                    ? await _discoveryService.DiscoverAsync(_scanCts.Token)
+                    : await _discoveryService.DiscoverAsync(targets, activeScan, _scanCts.Token))
+                .ToList();
 
             _store.UpsertRange(found);
             _store.Save();
@@ -186,6 +213,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             IsDiscovering = false;
             DiscoveryProgress = 1;
             DiscoverCommand.NotifyCanExecuteChanged();
+            ScanTargetCommand.NotifyCanExecuteChanged();
             StopDiscoveryCommand.NotifyCanExecuteChanged();
         }
     }
@@ -198,7 +226,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-            var found = (await _discoveryService.DiscoverAsync(cts.Token)).ToList();
+            var found = (_lastTargets == null
+                    ? await _discoveryService.DiscoverAsync(cts.Token)
+                    : await _discoveryService.DiscoverAsync(_lastTargets, _lastActiveScan, cts.Token))
+                .ToList();
             _store.UpsertRange(found);
             _store.Save();
 
@@ -252,6 +283,52 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>Search matches notes and tags, so the view has to re-filter when they change.</summary>
     private void RefreshFilter() => PostToUi(() => FilteredDevices.Refresh());
+
+    private async Task ScanTargetAsync() => await DiscoverAsync();
+
+    /// <summary>Rebuilds the interface list, keeping the current selection when that card is still there.</summary>
+    private void RefreshSubnets()
+    {
+        var previous = SelectedSubnet?.Target;
+
+        Subnets.Clear();
+        foreach (var option in SubnetProvider.Discover())
+            Subnets.Add(option);
+
+        SelectedSubnet = Subnets.FirstOrDefault(o => o.Target == previous) ?? Subnets[0];
+    }
+
+    /// <summary>
+    /// Turns the dropdown/text field into discovery targets. A null target list means "let the service
+    /// decide" (all detected interfaces).
+    /// </summary>
+    private bool TryResolveTarget(out IReadOnlyList<string>? targets, out bool activeScan, out string problem)
+    {
+        targets = null;
+        activeScan = false;
+        problem = "";
+
+        var selection = SelectedSubnet ?? SubnetOption.Auto;
+
+        if (selection.IsAuto)
+            return true;
+
+        if (selection.IsCustom)
+        {
+            if (!SubnetProvider.TryDescribe(CustomRange, out var description, out problem))
+                return false;
+
+            problem = "";
+            DiscoveryStatus = $"Rozsah: {description}";
+            targets = new[] { CustomRange.Trim() };
+            activeScan = DeepScan;
+            return true;
+        }
+
+        targets = new[] { selection.Target! };
+        activeScan = DeepScan;
+        return true;
+    }
 
     private void StopDiscovery()
     {
@@ -379,6 +456,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
         value.Contains(';') || value.Contains('"')
             ? "\"" + value.Replace("\"", "\"\"") + "\""
             : value;
+
+    public bool IsCustomTarget => SelectedSubnet?.IsCustom == true;
+
+    /// <summary>The deep-scan switch only makes sense for a concrete subnet or range.</summary>
+    public bool ShowsScanOptions => SelectedSubnet is { IsAuto: false };
+
+    partial void OnSelectedSubnetChanged(SubnetOption? value)
+    {
+        OnPropertyChanged(nameof(IsCustomTarget));
+        OnPropertyChanged(nameof(ShowsScanOptions));
+    }
 
     partial void OnSearchTextChanged(string value) => FilteredDevices.Refresh();
     partial void OnShowOnlyOnlineChanged(bool value) => FilteredDevices.Refresh();
