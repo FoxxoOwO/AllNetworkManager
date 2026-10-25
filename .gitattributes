@@ -1,0 +1,17 @@
+# Normalize line endings: text files can be checked out with the OS default, but the repo stores LF
+* text=auto
+
+*.cs      text diff=csharp
+*.xaml    text
+*.csproj  text
+*.slnx    text
+*.json    text
+*.yml     text
+*.md      text
+
+# Windows binaries produced by tooling stay binary
+*.png     binary
+*.ico     binary
+*.exe     binary
+*.dll     binary
+*.db      binary

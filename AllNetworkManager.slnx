@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="AllNetworkManager.App/AllNetworkManager.App.csproj" />
+  <Project Path="AllNetworkManager.Core/AllNetworkManager.Core.csproj" />
+  <Project Path="AllNetworkManager.Discovery/AllNetworkManager.Discovery.csproj" />
+  <Project Path="AllNetworkManager.Vendors.Axis/AllNetworkManager.Vendors.Axis.csproj" />
+  <Project Path="AllNetworkManager.Vendors.Bosch/AllNetworkManager.Vendors.Bosch.csproj" />
+  <Project Path="AllNetworkManager.Vendors.Microsens/AllNetworkManager.Vendors.Microsens.csproj" />
+  <Project Path="AllNetworkManager.Vendors.MikroTik/AllNetworkManager.Vendors.MikroTik.csproj" />
+  <Project Path="AllNetworkManager.Vendors.Onvif/AllNetworkManager.Vendors.Onvif.csproj" />
+  <Project Path="AllNetworkManager.Vendors.Wisenet/AllNetworkManager.Vendors.Wisenet.csproj" />
+</Solution>

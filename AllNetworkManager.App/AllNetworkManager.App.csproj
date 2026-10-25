@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AllNetworkManager.Core\AllNetworkManager.Core.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Discovery\AllNetworkManager.Discovery.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Vendors.Bosch\AllNetworkManager.Vendors.Bosch.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Vendors.Onvif\AllNetworkManager.Vendors.Onvif.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Vendors.MikroTik\AllNetworkManager.Vendors.MikroTik.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Vendors.Wisenet\AllNetworkManager.Vendors.Wisenet.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Vendors.Microsens\AllNetworkManager.Vendors.Microsens.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Vendors.Axis\AllNetworkManager.Vendors.Axis.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>

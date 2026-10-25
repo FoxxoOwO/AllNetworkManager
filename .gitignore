@@ -1,0 +1,33 @@
+# Build output
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local publish output
+publish/
+artifacts/
+*.nupkg
+
+# Application data (inventory lives in %LOCALAPPDATA%, never in the repo)
+*.db
+*.db-wal
+*.db-shm
+devices.json
+devices.json.imported
+*.log
+
+# Vendor reference tools — proprietary vendor binaries, kept locally as protocol references only
+ConfigManager/
+WiseDetector/
+Wisenet Device Manager/
+microsens/
+winbox/
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store

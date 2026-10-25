@@ -1,0 +1,444 @@
+<UserControl x:Class="AllNetworkManager.App.Views.DeviceDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:vm="clr-namespace:AllNetworkManager.App.ViewModels"
+             mc:Ignorable="d"
+             Background="{StaticResource BackgroundBrush}">
+
+    <UserControl.Resources>
+        <vm:ManufacturerToIconConverter x:Key="ManufacturerToIcon"/>
+        <vm:StatusToBrushConverter x:Key="StatusToBrush"/>
+        <vm:InverseBoolConverter x:Key="InverseBoolConverter"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <Grid>
+        <DockPanel>
+
+            <!-- Device header -->
+            <Border DockPanel.Dock="Top"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="20,14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding Manufacturer, Converter={StaticResource ManufacturerToIcon}}"
+                               FontSize="44" VerticalAlignment="Center" Margin="0,0,14,0"/>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="20" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                            <TextBlock Text="{Binding IpAddress}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Text="  •  " FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Text="{Binding DiscoveryProtocol}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Text="  •  " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Text="{Binding VendorName}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Text="  •  " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <Ellipse Width="9" Height="9" VerticalAlignment="Center"
+                                     Fill="{Binding Status, Converter={StaticResource StatusToBrush}}"/>
+                            <TextBlock Text="{Binding StatusText}" FontSize="11" Margin="5,0,0,0"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Command="{Binding RefreshCommand}" Style="{StaticResource FlatButton}"
+                                Padding="10,6" ToolTip="Načíst data ze zařízení" Content="🔄"/>
+                        <Button Command="{Binding DataContext.OpenWebInterfaceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                Style="{StaticResource FlatButton}" Padding="10,6" ToolTip="Otevřít webové rozhraní" Content="🌐"/>
+                        <Button Command="{Binding DataContext.PingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                Style="{StaticResource FlatButton}" Padding="10,6" ToolTip="Ping" Content="📶"/>
+                        <Button Command="{Binding WakeCommand}" Style="{StaticResource FlatButton}" Padding="10,6"
+                                ToolTip="Wake-on-LAN" Content="⚡"
+                                Visibility="{Binding CanWake, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Credentials -->
+            <Border DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,10">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Přihlášení:" Style="{StaticResource LabelStyle}" Margin="0,0,8,0"/>
+                    <TextBox Text="{Binding Username}" Width="140" Style="{StaticResource InputStyle}" Margin="0,0,8,0"/>
+                    <TextBox Text="{Binding Password}" Width="160" Style="{StaticResource InputStyle}" Margin="0,0,8,0"/>
+                    <Button Content="Uložit (DPAPI)" Command="{Binding SaveCredentialsCommand}"
+                            Style="{StaticResource FlatButton}" Padding="10,6" Margin="0,0,16,0"/>
+                    <TextBlock Text="heslo se ukládá šifrované pro aktuálního uživatele Windows"
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <TabControl>
+                <!-- Overview -->
+                <TabItem Header="Přehled">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                        <StackPanel>
+                            <GroupBox Header="Informace o zařízení">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Výrobce:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Manufacturer}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Model:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding Model}" Style="{StaticResource ValueStyle}"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="IP adresa:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding IpAddress}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Hostname:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding HostnameDisplay}" Style="{StaticResource ValueStyle}"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="MAC:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding MacAddress}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="Sériové číslo:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding SerialNumber}" Style="{StaticResource ValueStyle}"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Firmware:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding FirmwareVersion}" Style="{StaticResource ValueStyle}"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" Text="Hardware:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding HardwareVersion}" Style="{StaticResource ValueStyle}"/>
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Web:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3">
+                                        <Hyperlink NavigateUri="{Binding WebInterfaceUrl}" RequestNavigate="Hyperlink_RequestNavigate">
+                                            <TextBlock Text="{Binding WebInterfaceUrl}"/>
+                                        </Hyperlink>
+                                    </TextBlock>
+
+                                    <TextBlock Grid.Row="5" Grid.Column="0" Text="API:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="3">
+                                        <Hyperlink NavigateUri="{Binding ApiEndpoint}" RequestNavigate="Hyperlink_RequestNavigate">
+                                            <TextBlock Text="{Binding ApiEndpoint}"/>
+                                        </Hyperlink>
+                                    </TextBlock>
+                                </Grid>
+                            </GroupBox>
+
+                            <GroupBox Header="Poznámka" Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBox Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}"
+                                             AcceptsReturn="True" TextWrapping="Wrap"
+                                             MinHeight="80" MaxHeight="220"
+                                             VerticalScrollBarVisibility="Auto"
+                                             VerticalContentAlignment="Top"
+                                             ToolTip="Vlastní poznámka k zařízení — ukládá se automaticky do inventáře."/>
+                                    <DockPanel Margin="0,6,0,0">
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding NoteState}" FontSize="11"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Text="Ukládá se automaticky, přežije restart i opakovaný scan."
+                                                   FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    </DockPanel>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Header="Štítky" Margin="0,14,0,0">
+                                <StackPanel>
+                                    <ItemsControl ItemsSource="{Binding Tags}" Margin="0,0,0,4">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource BackgroundBrush}"
+                                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                                        CornerRadius="10" Padding="9,3" Margin="0,0,6,6">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding}" FontSize="11" VerticalAlignment="Center"/>
+                                                        <Button Content="✕" FontSize="9" Margin="7,0,0,0" Padding="2,0"
+                                                                Background="Transparent" BorderThickness="0"
+                                                                Cursor="Hand" ToolTip="Odebrat štítek"
+                                                                Command="{Binding DataContext.RemoveTagCommand,
+                                                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <TextBlock Text="Zatím žádné štítky — přidej třeba 'rack-4' nebo '3. patro'."
+                                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasTags}" Value="False">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <TextBox Width="200" Text="{Binding NewTag, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="Nový štítek, potvrď Enterem">
+                                            <TextBox.InputBindings>
+                                                <KeyBinding Key="Enter" Command="{Binding AddTagCommand}"/>
+                                            </TextBox.InputBindings>
+                                        </TextBox>
+                                        <Button Content="Přidat" Style="{StaticResource SecondaryButton}"
+                                                Command="{Binding AddTagCommand}" Margin="8,0,0,0"/>
+                                        <TextBlock Text="štítky se ukládají automaticky a hledají se ve filtru"
+                                                   FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Header="Schopnosti (ONVIF)" Margin="0,14,0,0"
+                                      Visibility="{Binding Capabilities, Converter={x:Static vm:NullToVisibilityConverter.Instance}}">
+                                <WrapPanel Orientation="Horizontal">
+                                    <Border Background="{Binding Capabilities.Device, Converter={x:Static vm:BoolToBrushConverter.Instance}}" CornerRadius="4" Padding="10,5" Margin="3">
+                                        <TextBlock Text="Device" Foreground="White"/>
+                                    </Border>
+                                    <Border Background="{Binding Capabilities.Media, Converter={x:Static vm:BoolToBrushConverter.Instance}}" CornerRadius="4" Padding="10,5" Margin="3">
+                                        <TextBlock Text="Media" Foreground="White"/>
+                                    </Border>
+                                    <Border Background="{Binding Capabilities.Ptz, Converter={x:Static vm:BoolToBrushConverter.Instance}}" CornerRadius="4" Padding="10,5" Margin="3">
+                                        <TextBlock Text="PTZ" Foreground="White"/>
+                                    </Border>
+                                    <Border Background="{Binding Capabilities.Events, Converter={x:Static vm:BoolToBrushConverter.Instance}}" CornerRadius="4" Padding="10,5" Margin="3">
+                                        <TextBlock Text="Events" Foreground="White"/>
+                                    </Border>
+                                    <Border Background="{Binding Capabilities.Imaging, Converter={x:Static vm:BoolToBrushConverter.Instance}}" CornerRadius="4" Padding="10,5" Margin="3">
+                                        <TextBlock Text="Imaging" Foreground="White"/>
+                                    </Border>
+                                    <Border Background="{Binding Capabilities.Recording, Converter={x:Static vm:BoolToBrushConverter.Instance}}" CornerRadius="4" Padding="10,5" Margin="3">
+                                        <TextBlock Text="Recording" Foreground="White"/>
+                                    </Border>
+                                    <Border Background="{Binding Capabilities.Analytics, Converter={x:Static vm:BoolToBrushConverter.Instance}}" CornerRadius="4" Padding="10,5" Margin="3">
+                                        <TextBlock Text="Analytics" Foreground="White"/>
+                                    </Border>
+                                    <Border Background="{Binding Capabilities.DeviceIO, Converter={x:Static vm:BoolToBrushConverter.Instance}}" CornerRadius="4" Padding="10,5" Margin="3">
+                                        <TextBlock Text="Device IO" Foreground="White"/>
+                                    </Border>
+                                </WrapPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Network -->
+                <TabItem Header="Síť">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                        <StackPanel>
+                            <GroupBox Header="Síťová konfigurace">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <CheckBox Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4" Content="DHCP"
+                                              IsChecked="{Binding NetworkConfig.IsDhcp}" Margin="0,0,0,10"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="IP adresa:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding NetworkConfig.IpAddress}"
+                                             IsEnabled="{Binding NetworkConfig.IsDhcp, Converter={StaticResource InverseBoolConverter}}"
+                                             Style="{StaticResource InputStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Maska:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding NetworkConfig.SubnetMask}"
+                                             IsEnabled="{Binding NetworkConfig.IsDhcp, Converter={StaticResource InverseBoolConverter}}"
+                                             Style="{StaticResource InputStyle}"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Gateway:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding NetworkConfig.Gateway}"
+                                             IsEnabled="{Binding NetworkConfig.IsDhcp, Converter={StaticResource InverseBoolConverter}}"
+                                             Style="{StaticResource InputStyle}"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="VLAN:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding NetworkConfig.VlanId}" Style="{StaticResource InputStyle}"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="DNS 1:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding NetworkConfig.Dns1}"
+                                             IsEnabled="{Binding NetworkConfig.IsDhcp, Converter={StaticResource InverseBoolConverter}}"
+                                             Style="{StaticResource InputStyle}"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" Text="DNS 2:" Style="{StaticResource LabelStyle}"/>
+                                    <TextBox Grid.Row="3" Grid.Column="3" Text="{Binding NetworkConfig.Dns2}"
+                                             IsEnabled="{Binding NetworkConfig.IsDhcp, Converter={StaticResource InverseBoolConverter}}"
+                                             Style="{StaticResource InputStyle}"/>
+
+                                    <StackPanel Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="4"
+                                                Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                                        <Button Content="Zapsat konfiguraci" Style="{StaticResource PrimaryButton}"
+                                                Command="{Binding ApplyNetworkCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </GroupBox>
+                            <TextBlock Text="Hodnoty se načtou tlačítkem 🔄 v hlavičce zařízení."
+                                       FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Users -->
+                <TabItem Header="Uživatelé" Visibility="{Binding CanUsers, Converter={StaticResource BoolToVis}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                        <StackPanel>
+                            <GroupBox Header="Uživatelské účty">
+                                <DataGrid ItemsSource="{Binding Users}" SelectedItem="{Binding SelectedUser}"
+                                          AutoGenerateColumns="False" HeadersVisibility="Column"
+                                          CanUserAddRows="False" IsReadOnly="True" Height="220">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Uživatel" Binding="{Binding Username}" Width="*"/>
+                                        <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="140"/>
+                                        <DataGridCheckBoxColumn Header="Aktivní" Binding="{Binding IsEnabled}" Width="80"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </GroupBox>
+
+                            <GroupBox Header="Nový uživatel" Margin="0,12,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Jméno:" Style="{StaticResource LabelStyle}" Margin="0,0,6,0"/>
+                                    <TextBox Text="{Binding NewUserName}" Width="150" Style="{StaticResource InputStyle}" Margin="0,0,10,0"/>
+                                    <TextBlock Text="Heslo:" Style="{StaticResource LabelStyle}" Margin="0,0,6,0"/>
+                                    <TextBox Text="{Binding NewUserPassword}" Width="150" Style="{StaticResource InputStyle}" Margin="0,0,10,0"/>
+                                    <TextBlock Text="Role:" Style="{StaticResource LabelStyle}" Margin="0,0,6,0"/>
+                                    <ComboBox SelectedItem="{Binding NewUserRole}" Width="120" Margin="0,0,10,0">
+                                        <ComboBoxItem Content="Admin"/>
+                                        <ComboBoxItem Content="Operator"/>
+                                        <ComboBoxItem Content="Viewer"/>
+                                    </ComboBox>
+                                    <Button Content="Přidat" Style="{StaticResource SuccessButton}" Command="{Binding AddUserCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="Smazat vybraného" Style="{StaticResource ErrorButton}" Command="{Binding DeleteUserCommand}"/>
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Logs -->
+                <TabItem Header="Logy" Visibility="{Binding CanLogs, Converter={StaticResource BoolToVis}}">
+                    <DockPanel Margin="20">
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button Content="Načíst logy" Style="{StaticResource PrimaryButton}" Command="{Binding LoadLogsCommand}"/>
+                            <TextBlock Text="{Binding Logs.Count, StringFormat='{}{0} záznamů'}"
+                                       VerticalAlignment="Center" Margin="12,0,0,0"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </StackPanel>
+                        <DataGrid ItemsSource="{Binding Logs}" AutoGenerateColumns="False" IsReadOnly="True"
+                                  HeadersVisibility="Column" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Čas" Binding="{Binding Timestamp, StringFormat='yyyy-MM-dd HH:mm:ss'}" Width="150"/>
+                                <DataGridTextColumn Header="Úroveň" Binding="{Binding Level}" Width="90"/>
+                                <DataGridTextColumn Header="Zdroj" Binding="{Binding Source}" Width="160"/>
+                                <DataGridTextColumn Header="Zpráva" Binding="{Binding Message}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </TabItem>
+
+                <!-- Firmware -->
+                <TabItem Header="Firmware" Visibility="{Binding CanFirmware, Converter={StaticResource BoolToVis}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                        <StackPanel>
+                            <GroupBox Header="Aktuální verze">
+                                <TextBlock Text="{Binding FirmwareVersion}" FontSize="15" FontWeight="SemiBold"/>
+                            </GroupBox>
+
+                            <GroupBox Header="Nahrát firmware" Margin="0,12,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Vybereš .bin/.fw/.img soubor. Zařízení se po nahrání restartuje."
+                                               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,10"/>
+                                    <Button Content="Vybrat firmware a nahrát" Style="{StaticResource PrimaryButton}"
+                                            HorizontalAlignment="Left" Command="{Binding UploadFirmwareCommand}"/>
+                                    <TextBlock Text="⚠ Během nahrávání zařízení nevypínej."
+                                               FontSize="11" Foreground="{StaticResource WarningBrush}" Margin="0,10,0,0"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Header="Údržba" Margin="0,12,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Restart" Style="{StaticResource WarningButton}"
+                                            Command="{Binding RebootCommand}" Margin="0,0,10,0"/>
+                                    <Button Content="Tovární nastavení" Style="{StaticResource ErrorButton}"
+                                            Command="{Binding FactoryResetCommand}"/>
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Backup / restore -->
+                <TabItem Header="Konfigurace" Visibility="{Binding CanBackup, Converter={StaticResource BoolToVis}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                        <StackPanel>
+                            <GroupBox Header="Záloha a obnova konfigurace">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Zálohovat do souboru" Style="{StaticResource PrimaryButton}"
+                                            Command="{Binding BackupConfigCommand}" Margin="0,0,10,0"/>
+                                    <Button Content="Obnovit ze souboru" Style="{StaticResource SecondaryButton}"
+                                            Command="{Binding RestoreConfigCommand}"
+                                            Visibility="{Binding CanRestore, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </GroupBox>
+                            <TextBlock Text="Obnova konfigurace zařízení restartuje."
+                                       FontSize="11" Foreground="{StaticResource WarningBrush}" Margin="0,10,0,0"
+                                       Visibility="{Binding CanRestore, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="Toto zařízení umí jen zálohu (snapshot konfigurace); obnovu řeší vendor tool."
+                                       FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CanRestore}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
+
+        <!-- Busy overlay -->
+        <Border Background="#66000000" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+            <Border Background="{StaticResource SurfaceBrush}" CornerRadius="6" Padding="20"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="{Binding BusyText}" FontWeight="SemiBold" Margin="0,0,0,8"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <ProgressBar IsIndeterminate="True" Height="4" Width="220"/>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

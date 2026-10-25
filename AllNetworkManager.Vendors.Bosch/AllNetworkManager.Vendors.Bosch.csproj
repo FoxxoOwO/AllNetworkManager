@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AllNetworkManager.Core\AllNetworkManager.Core.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Discovery\AllNetworkManager.Discovery.csproj" />
+    <ProjectReference Include="..\AllNetworkManager.Vendors.Onvif\AllNetworkManager.Vendors.Onvif.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.13" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
