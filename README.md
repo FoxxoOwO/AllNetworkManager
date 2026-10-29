@@ -105,6 +105,26 @@ enabled, port-scan fallback) and the Bosch SDK path (`Bosch:SdkPath`, default po
   to reverse DNS with a 2 s timeout. Resolved names are stored in `devices.json` and a rescan never overwrites
   them with an empty value.
 
+## Discovery protocols
+
+Multicast discovery (WS-Discovery, SSDP, MNDP, MICROSENS) is complemented by vendor broadcast protocols, one
+class each so a vendor answering with something unexpected cannot take down the rest of the scan:
+
+| Protocol | Request | Reply | Parsed fields |
+|---|---|---|---|
+| Hikvision SADP | XML probe → 239.255.255.250:37020 | XML `ProbeMatch` | model, serial, MAC, firmware, HTTP port |
+| Dahua DHIP | 32-byte DHIP header + JSON → 239.255.255.251:37810 | header + JSON `client.notifyDevInfo` | model, serial, MAC, IP, mask, gateway, channels |
+| Dahua (legacy) | 32-byte `0xa3` probe → broadcast:5050 | `0xb3` three-section frame | model, serial, MAC, IP, mask, gateway |
+| Vivotek | 5-byte header (magic `0x4a5d8f1c`) → broadcast:10000 | type/length/value records | model, long name, MAC, IP, HTTP port |
+| Ubiquiti | 4-byte probe → 233.89.188.1 and broadcast:10001 | type/length/value records | model, brand, MAC, IP, firmware, hardware |
+| Hanwha Techwin | 16-byte probe → broadcast:7701 | fixed-layout reply on 7711 | model, MAC, IP, mask, gateway, web URL |
+
+The port/address matrix and the wire formats come from the LGPL-3.0
+[UniversalScanner](https://github.com/julienblitte/UniversalScanner) project, which documents the protocols it
+reverse engineered. Only the protocol behaviour is reused — the implementation here is written against the
+captured packets, and every parser is validated against the vendor's own `.selftest` captures (Hikvision,
+Dahua v1/v2, Vivotek, Ubiquiti, Hanwha) plus a live UDP round trip.
+
 ## Scan targets
 
 The device panel has a target selector above the list:

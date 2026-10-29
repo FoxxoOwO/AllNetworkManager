@@ -29,6 +29,16 @@ public static class DiscoveryServiceCollectionExtensions
         services.AddSingleton<IDiscoveryProtocol, WsDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryProtocol, SsdpProtocol>();
         services.AddSingleton<IDiscoveryProtocol, MndpProtocol>();
+
+        // Vendor broadcast protocols (single datagram out, replies parsed per vendor). Ports follow the
+        // UniversalScanner protocol matrix; each one is a separate class so a broken one cannot take down
+        // discovery for the rest.
+        services.AddSingleton<IDiscoveryProtocol, HikvisionDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, DahuaDhipDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, DahuaLegacyDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, VivotekDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, UbiquitiDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, HanwhaDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryService, DiscoveryService>();
 
         return services;
