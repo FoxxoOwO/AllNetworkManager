@@ -39,6 +39,20 @@ public static class DiscoveryServiceCollectionExtensions
         services.AddSingleton<IDiscoveryProtocol, VivotekDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryProtocol, UbiquitiDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryProtocol, HanwhaDiscoveryProtocol>();
+
+        // text/XML based vendor protocols
+        services.AddSingleton<IDiscoveryProtocol, MsSqlBrowserDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, MicrochipDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, Vision360DiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, SonyDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, EatonDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, EdenOptimaDiscoveryProtocol>();
+
+        // binary vendor protocols
+        services.AddSingleton<IDiscoveryProtocol, LantronixDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, AdvantechDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, VstarcamDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, NiceVisionDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryService, DiscoveryService>();
 
         return services;

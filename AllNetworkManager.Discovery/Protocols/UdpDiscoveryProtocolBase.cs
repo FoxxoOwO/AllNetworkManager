@@ -35,6 +35,9 @@ public abstract class UdpDiscoveryProtocolBase : IDiscoveryProtocol
     /// <summary>Serialised discovery request.</summary>
     protected abstract byte[] BuildRequest();
 
+    /// <summary>Variant for protocols that must tell the device where to answer.</summary>
+    protected virtual byte[] BuildRequest(int localPort) => BuildRequest();
+
     /// <summary>Parses one reply datagram; add zero or one device to <paramref name="found"/>.</summary>
     protected abstract void Parse(byte[] data, IPEndPoint from, List<DiscoveredDevice> found);
 
@@ -79,7 +82,7 @@ public abstract class UdpDiscoveryProtocolBase : IDiscoveryProtocol
 
             socket.Bind(new IPEndPoint(IPAddress.Any, ReplyPort ?? 0));
 
-            var request = BuildRequest();
+            var request = BuildRequest(((IPEndPoint)socket.LocalEndPoint!).Port);
 
             foreach (var (address, localAddress) in EnumerateSends(unicastTarget))
             {

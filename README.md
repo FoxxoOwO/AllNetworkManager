@@ -118,6 +118,16 @@ class each so a vendor answering with something unexpected cannot take down the 
 | Vivotek | 5-byte header (magic `0x4a5d8f1c`) → broadcast:10000 | type/length/value records | model, long name, MAC, IP, HTTP port |
 | Ubiquiti | 4-byte probe → 233.89.188.1 and broadcast:10001 | type/length/value records | model, brand, MAC, IP, firmware, hardware |
 | Hanwha Techwin | 16-byte probe → broadcast:7701 | fixed-layout reply on 7711 | model, MAC, IP, mask, gateway, web URL |
+| MSSQL Browser | `0x02` byte → broadcast:1434 | CSV `key;value;…` | instance name, server name, version |
+| Microchip / GCE | `Discover GCE Devices` → broadcast:30303 | two text lines | name, MAC |
+| 360Vision | `DISCOVER\n` → broadcast:3600 | `DISCOVER TYPE=… KEY='mac' ID=…` | type, MAC, serial |
+| Sony | `0x02 ENQ:allinfo 0xff` → broadcast:2380 | `0xff`-separated `KEY:value` records | model, serial, MAC, IP, web port, firmware |
+| Eaton UPS | `<SCAN_REQUEST/>` → broadcast:4679 | XML `UPS.PowerSummary.*` objects | product, model, serial, version |
+| Eden Optima | `DETECT BOX` → broadcast:8088 | `BOX\|` + XML | serial, IP, mask, gateway, DNS, web port |
+| Lantronix | `00 00 00 f6` → broadcast:30718 | 30-byte fixed layout | MAC, gateway, hardware, version |
+| Advantech | 60-byte `MADA` probe → broadcast:5048 | header + product block | MAC, product name, hardware |
+| Vstarcam | `44 48 01 01` → broadcast:8600 | 256-byte fixed layout | IP, mask, gateway, DNS, MAC, serial, name, firmware |
+| NiceVision | `NICE` request with answer port → broadcast:2007 | 590-byte fixed layout | MAC, IP, mask, gateway, name, version |
 
 The port/address matrix and the wire formats come from the LGPL-3.0
 [UniversalScanner](https://github.com/julienblitte/UniversalScanner) project, which documents the protocols it
