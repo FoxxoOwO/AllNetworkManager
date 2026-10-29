@@ -47,11 +47,14 @@ jobs:
           Get-ChildItem publish | Select-Object Name, Length | Format-Table -AutoSize
 
       - name: Upload build artifact
+        # the artifact is a convenience, not the build result: an account-wide Actions storage quota
+        # must not turn a green build red (it did, with four 2.4 MB artifacts in this repo)
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: AllNetworkManager-win-x64
           path: publish/
-          retention-days: 14
+          retention-days: 5
 
   release:
     name: Release
