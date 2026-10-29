@@ -128,6 +128,15 @@ class each so a vendor answering with something unexpected cannot take down the 
 | Advantech | 60-byte `MADA` probe → broadcast:5048 | header + product block | MAC, product name, hardware |
 | Vstarcam | `44 48 01 01` → broadcast:8600 | 256-byte fixed layout | IP, mask, gateway, DNS, MAC, serial, name, firmware |
 | NiceVision | `NICE` request with answer port → broadcast:2007 | 590-byte fixed layout | MAC, IP, mask, gateway, name, version |
+| Axis mDNS | PTR query for `_axis-video` / `_axis-nvr` / `_axis-disc` → 224.0.0.251:5353 | PTR + SRV + TXT + A | model, serial, MAC, firmware, port, camera vs. recorder |
+| Arecont mDNS | PTR query for `_arec._tcp` | PTR + SRV + TXT + A | model, serial, MAC, stream port |
+| Google Cast mDNS | PTR query for `_googlecast._tcp` | PTR + SRV + TXT + A | friendly name, model (`md`), device id, version (`ve`), cast port |
+
+The three mDNS protocols use a small DNS-SD engine (`Protocols/Mdns/`): a PTR query per service type, answers
+joined through SRV/TXT/A records (with real name compression), and a second round for hosts whose address was
+missing. Port 5353 is bound with `ReuseAddress` so the browse survives the Windows responder; if the bind fails
+the query falls back to an ephemeral port with the unicast-response bit set. Only instances of the services a
+protocol asked for are turned into devices — in a shared reply the other services' records are present too.
 
 The port/address matrix and the wire formats come from the LGPL-3.0
 [UniversalScanner](https://github.com/julienblitte/UniversalScanner) project, which documents the protocols it

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using AllNetworkManager.Core.Discovery;
 using AllNetworkManager.Discovery.Protocols;
+using AllNetworkManager.Discovery.Protocols.Mdns;
 
 public static class DiscoveryServiceCollectionExtensions
 {
@@ -53,6 +54,11 @@ public static class DiscoveryServiceCollectionExtensions
         services.AddSingleton<IDiscoveryProtocol, AdvantechDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryProtocol, VstarcamDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryProtocol, NiceVisionDiscoveryProtocol>();
+
+        // DNS-SD over mDNS
+        services.AddSingleton<IDiscoveryProtocol, AxisMdnsDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, ArecontMdnsDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, GoogleCastDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryService, DiscoveryService>();
 
         return services;
