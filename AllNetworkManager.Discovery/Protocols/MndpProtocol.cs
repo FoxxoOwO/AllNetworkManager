@@ -27,63 +27,123 @@ public class MndpProtocol : IDiscoveryProtocol
     public async Task<IEnumerable<DiscoveredDevice>> ScanAsync(string subnet, CancellationToken ct = default)
     {
         var devices = new List<DiscoveredDevice>();
+        var sockets = new List<UdpClient>();
 
         try
         {
+            // A target that is not on any local interface (e.g. a hand-typed range) can never be reached
+            // by multicast, but silently returning nothing would hide that. Fall back to probing from
+            // every local interface so devices on the connected networks are still found.
             var localIp = GetLocalIpForSubnet(subnet);
-            if (localIp == null)
+            IReadOnlyList<IPAddress> sendFrom;
+
+            if (localIp != null)
             {
-                _logger.LogDebug("No local IP found for subnet {Subnet}", subnet);
-                return devices;
+                sendFrom = new[] { localIp };
+            }
+            else
+            {
+                sendFrom = GetLocalIpv4Addresses();
+
+                if (sendFrom.Count == 0)
+                {
+                    _logger.LogDebug("MNDP: subnet {Subnet} is not local and no interface is available", subnet);
+                    return devices;
+                }
+
+                _logger.LogDebug(
+                    "MNDP: subnet {Subnet} is not on a local interface, probing from all {Count} interface(s)",
+                    subnet, sendFrom.Count);
             }
 
-            var localMac = GetLocalMacAddress(localIp);
-            
-            using var udpClient = new UdpClient();
-            udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            var localEp = new IPEndPoint(localIp, 0);
-            udpClient.Client.Bind(localEp);
-            udpClient.EnableBroadcast = true;
-
-            // Send to both multicast (preferred, works across VLANs with proper config) and broadcast
             var multicastEp = new IPEndPoint(IPAddress.Parse(MndpMulticast), MndpPort);
             var broadcastEp = new IPEndPoint(IPAddress.Broadcast, MndpPort);
-            var discoverPacket = CreateMndpDiscover(localMac);
-            
-            // Send to multicast first (preferred) - send multiple times for reliability
-            for (int i = 0; i < 2; i++)
+
+            // One socket per interface, bound to that interface's address: a socket bound to 0.0.0.0
+            // would only let broadcast leave via the route-chosen card.
+            foreach (var interfaceIp in sendFrom)
             {
-                await udpClient.SendAsync(discoverPacket, discoverPacket.Length, multicastEp);
-                await Task.Delay(50, ct);
+                ct.ThrowIfCancellationRequested();
+
+                UdpClient udpClient;
+                try
+                {
+                    udpClient = new UdpClient(new IPEndPoint(interfaceIp, 0)) { EnableBroadcast = true };
+                    udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                    udpClient.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface,
+                        interfaceIp.GetAddressBytes());
+                    udpClient.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 1);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "MNDP: could not open a socket on {Ip}", interfaceIp);
+                    continue;
+                }
+
+                sockets.Add(udpClient);
+
+                var discoverPacket = CreateMndpDiscover(GetLocalMacAddress(interfaceIp));
+
+                try
+                {
+                    // Send to multicast first (preferred) - twice for reliability
+                    for (int i = 0; i < 2; i++)
+                    {
+                        await udpClient.SendAsync(discoverPacket, discoverPacket.Length, multicastEp);
+                        await Task.Delay(50, ct);
+                    }
+
+                    // And broadcast for compatibility
+                    await udpClient.SendAsync(discoverPacket, discoverPacket.Length, broadcastEp);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "MNDP: send failed on {Ip}", interfaceIp);
+                }
             }
-            
-            // Also send broadcast for compatibility
-            await udpClient.SendAsync(discoverPacket, discoverPacket.Length, broadcastEp);
+
+            if (sockets.Count == 0) return devices;
 
             var endTime = DateTime.UtcNow.AddSeconds(DefaultListenWindowSec);
             while (DateTime.UtcNow < endTime && !ct.IsCancellationRequested)
             {
-                try
+                var receivedAny = false;
+
+                foreach (var udpClient in sockets)
                 {
-                    if (udpClient.Available > 0)
+                    try
                     {
+                        if (udpClient.Available == 0) continue;
+
                         var result = await udpClient.ReceiveAsync();
+                        receivedAny = true;
+
                         var device = ParseMndpResponse(result.Buffer, result.RemoteEndPoint.Address.ToString());
-                        if (device != null)
+                        if (device != null && !devices.Any(d => d.IpAddress == device.IpAddress))
                             devices.Add(device);
                     }
-                    await Task.Delay(50, ct); // Reduced from 100ms for faster response processing
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Error receiving MNDP response");
+                    }
                 }
-                catch (OperationCanceledException) { break; }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Error receiving MNDP response");
-                }
+
+                if (!receivedAny)
+                    await Task.Delay(50, ct);
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "MNDP scan failed");
+        }
+        finally
+        {
+            foreach (var socket in sockets) socket.Dispose();
         }
 
         return devices;
@@ -161,8 +221,7 @@ public class MndpProtocol : IDiscoveryProtocol
             if (parts.Length != 2) return null;
             
             var baseIp = IPAddress.Parse(parts[0]);
-            var prefixLen = int.Parse(parts[1]);
-            
+            var prefixLen = int.Parse(parts[1]);            
             // Prefer interface with smallest subnet match (most specific)
             IPAddress? bestMatch = null;
             int bestPrefixLen = -1;
@@ -192,6 +251,30 @@ public class MndpProtocol : IDiscoveryProtocol
         }
         catch { }
         return null;
+    }
+
+    /// <summary>All up IPv4 addresses, used when the requested target is not on a local interface.</summary>
+    private static List<IPAddress> GetLocalIpv4Addresses()
+    {
+        var addresses = new List<IPAddress>();
+
+        try
+        {
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+
+                foreach (var uip in ni.GetIPProperties().UnicastAddresses)
+                {
+                    if (uip.Address.AddressFamily == AddressFamily.InterNetwork)
+                        addresses.Add(uip.Address);
+                }
+            }
+        }
+        catch { }
+
+        return addresses;
     }
 
     private IPAddress? GetLocalIpForTarget(string targetIp)
