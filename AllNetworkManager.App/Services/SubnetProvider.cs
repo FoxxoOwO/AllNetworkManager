@@ -1,5 +1,6 @@
 namespace AllNetworkManager.App.Services;
 
+using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -71,9 +72,10 @@ public static class SubnetProvider
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // without network information the dropdown simply stays on "auto"
+            // Log the error for debugging, but don't crash - the dropdown simply stays on "auto"
+            Debug.WriteLine($"SubnetProvider.Discover failed: {ex.Message}");
         }
 
         options.Add(SubnetOption.Custom);
@@ -84,6 +86,19 @@ public static class SubnetProvider
     public static bool TryDescribe(string? typed, out string description, out string error)
     {
         if (AddressRange.TryParse(typed, out var addresses, out error))
+        {
+            description = AddressRange.Describe(addresses);
+            return true;
+        }
+
+        description = "";
+        return false;
+    }
+
+    /// <summary>Validates a user-typed target with a custom max address limit.</summary>
+    public static bool TryDescribe(string? typed, int maxAddresses, out string description, out string error)
+    {
+        if (AddressRange.TryParse(typed, maxAddresses, out var addresses, out error))
         {
             description = AddressRange.Describe(addresses);
             return true;

@@ -37,11 +37,29 @@ public class WsDiscoveryProtocol : IDiscoveryProtocol
             var localEp = new IPEndPoint(IPAddress.Any, 0);
             udpClient.Client.Bind(localEp);
 
-            var probeMessage = CreateProbeMessage();
             var multicastEp = new IPEndPoint(IPAddress.Parse(MulticastAddress), MulticastPort);
-            var probeBytes = Encoding.UTF8.GetBytes(probeMessage);
 
-            await udpClient.SendAsync(probeBytes, probeBytes.Length, multicastEp);
+            // Search for multiple ONVIF device types to catch cameras, NVRs, encoders, etc.
+            var deviceTypes = new[]
+            {
+                "dn:NetworkVideoTransmitter",
+                "dn:NetworkVideoStorage",
+                "dn:VideoAnalytics",
+                "dn:Display",
+                "dn:RecordingConfig",
+                "dn:Replay",
+                "dn:Search",
+                "tds:Device"
+            };
+
+            foreach (var type in deviceTypes)
+            {
+                ct.ThrowIfCancellationRequested();
+                var probeMessage = CreateProbeMessage(type);
+                var probeBytes = Encoding.UTF8.GetBytes(probeMessage);
+                await udpClient.SendAsync(probeBytes, probeBytes.Length, multicastEp);
+                await Task.Delay(50, ct);
+            }
 
             var receiveTask = Task.Run(async () =>
             {
@@ -58,7 +76,7 @@ public class WsDiscoveryProtocol : IDiscoveryProtocol
                             if (device != null)
                                 devices.Add(device);
                         }
-                        await Task.Delay(100, ct);
+                        await Task.Delay(50, ct);
                     }
                     catch (OperationCanceledException) { break; }
                     catch (Exception ex)
@@ -116,7 +134,7 @@ public class WsDiscoveryProtocol : IDiscoveryProtocol
         return null;
     }
 
-    private string CreateProbeMessage()
+    private string CreateProbeMessage(string deviceType = "dn:NetworkVideoTransmitter")
     {
         var messageId = Guid.NewGuid().ToString();
         return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
@@ -131,7 +149,7 @@ public class WsDiscoveryProtocol : IDiscoveryProtocol
     </e:Header>
     <e:Body>
         <d:Probe>
-            <d:Types>dn:NetworkVideoTransmitter</d:Types>
+            <d:Types>{deviceType}</d:Types>
         </d:Probe>
     </e:Body>
 </e:Envelope>";

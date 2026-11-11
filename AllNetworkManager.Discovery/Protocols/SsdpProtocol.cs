@@ -34,11 +34,26 @@ public class SsdpProtocol : IDiscoveryProtocol
             var localEp = new IPEndPoint(IPAddress.Any, 0);
             udpClient.Client.Bind(localEp);
 
-            var msearch = CreateMsearch();
             var multicastEp = new IPEndPoint(IPAddress.Parse(MulticastAddress), MulticastPort);
-            var msearchBytes = Encoding.ASCII.GetBytes(msearch);
 
-            await udpClient.SendAsync(msearchBytes, msearchBytes.Length, multicastEp);
+            // Search for multiple UPnP device types to catch cameras, NVRs, etc.
+            var searchTargets = new[]
+            {
+                "urn:schemas-upnp-org:device:basic:1",
+                "urn:schemas-upnp-org:device:MediaServer:1",
+                "urn:schemas-upnp-org:device:MediaRenderer:1",
+                "urn:schemas-onvif-org:device:NetworkVideoTransmitter:1",
+                "ssdp:all"
+            };
+
+            foreach (var st in searchTargets)
+            {
+                ct.ThrowIfCancellationRequested();
+                var msearch = CreateMsearch(st);
+                var msearchBytes = Encoding.ASCII.GetBytes(msearch);
+                await udpClient.SendAsync(msearchBytes, msearchBytes.Length, multicastEp);
+                await Task.Delay(50, ct); // small delay between M-SEARCHs
+            }
 
             var endTime = DateTime.UtcNow.AddSeconds(5);
             while (DateTime.UtcNow < endTime && !ct.IsCancellationRequested)
@@ -53,7 +68,7 @@ public class SsdpProtocol : IDiscoveryProtocol
                         if (device != null)
                             devices.Add(device);
                     }
-                    await Task.Delay(100, ct);
+                    await Task.Delay(50, ct);
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex)
@@ -87,13 +102,13 @@ public class SsdpProtocol : IDiscoveryProtocol
         return null;
     }
 
-    private string CreateMsearch()
+    private string CreateMsearch(string searchTarget = "ssdp:all")
     {
         return "M-SEARCH * HTTP/1.1\r\n" +
                $"HOST: {MulticastAddress}:{MulticastPort}\r\n" +
                "MAN: \"ssdp:discover\"\r\n" +
                "MX: 3\r\n" +
-               "ST: urn:schemas-upnp-org:device:basic:1\r\n" +
+               $"ST: {searchTarget}\r\n" +
                "\r\n";
     }
 

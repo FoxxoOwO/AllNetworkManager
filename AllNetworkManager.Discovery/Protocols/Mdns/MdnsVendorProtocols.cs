@@ -4,7 +4,7 @@ using AllNetworkManager.Core.Devices;
 using AllNetworkManager.Core.Discovery;
 using Microsoft.Extensions.Logging;
 
-/// <summary>Axis cameras and NVRs advertise themselves over DNS-SD (<c>_axis-video</c>, <c>_axis-nvr</c>).</summary>
+/// <summary>Axis cameras, NVRs, audio and RTSP devices advertise themselves over DNS-SD.</summary>
 public sealed class AxisMdnsDiscoveryProtocol : MdnsServiceDiscoveryProtocol
 {
     public AxisMdnsDiscoveryProtocol(ILogger<AxisMdnsDiscoveryProtocol> logger) : base(logger) { }
@@ -15,23 +15,51 @@ public sealed class AxisMdnsDiscoveryProtocol : MdnsServiceDiscoveryProtocol
     {
         "_axis-video._tcp.local",
         "_axis-nvr._tcp.local",
-        "_axis-disc._tcp.local"
+        "_axis-disc._tcp.local",
+        "_axis-rtsp._tcp.local",
+        "_axis-audio._tcp.local"
     };
 
     protected override DiscoveredDevice? ToDevice(MdnsServiceInstance instance)
     {
         // instance names look like "AXIS P3265-LVE - B8A44F123456._axis-video._tcp.local"
         var friendly = StripService(instance.InstanceName, instance.Service);
-        var dash = friendly.LastIndexOf(" - ", StringComparison.Ordinal);
 
+        // Try multiple delimiter patterns
         var model = instance.TxtValue("model", "product", "modelname", "ty");
-        if (model.Length == 0)
-            model = dash > 0 ? friendly[..dash].Trim() : friendly;
-
         var serial = instance.TxtValue("serial", "serialnumber", "sn");
-        if (serial.Length == 0 && dash > 0) serial = friendly[(dash + 3)..].Trim();
+        
+        if (model.Length == 0 || serial.Length == 0)
+        {
+            // Try " - " delimiter first (most common)
+            var dash = friendly.LastIndexOf(" - ", StringComparison.Ordinal);
+            if (dash > 0)
+            {
+                if (model.Length == 0) model = friendly[..dash].Trim();
+                if (serial.Length == 0) serial = friendly[(dash + 3)..].Trim();
+            }
+            else
+            {
+                // Try "_" delimiter (older firmware)
+                var underscore = friendly.LastIndexOf('_');
+                if (underscore > 0)
+                {
+                    if (model.Length == 0) model = friendly[..underscore].Trim();
+                    if (serial.Length == 0) serial = friendly[(underscore + 1)..].Trim();
+                }
+                else if (model.Length == 0)
+                {
+                    // Fallback: whole name as model
+                    model = friendly;
+                }
+            }
+        }
 
-        var mac = NormalizeMac(instance.TxtValue("macaddress", "mac", "macaddr"));
+        // Clean up model/serial - remove trailing dots from service suffix
+        model = model.TrimEnd('.');
+        serial = serial.TrimEnd('.');
+
+        var mac = NormalizeMac(instance.TxtValue("macaddress", "mac", "macaddr", "ethmac"));
 
         var properties = new Dictionary<string, object>
         {
@@ -43,16 +71,50 @@ public sealed class AxisMdnsDiscoveryProtocol : MdnsServiceDiscoveryProtocol
 
         foreach (var pair in instance.Txt) properties["txt." + pair.Key] = pair.Value;
 
-        var isNvr = instance.Service.Contains("nvr", StringComparison.OrdinalIgnoreCase);
+        // Infer device type from service and model
+        var deviceType = InferDeviceType(instance.Service, model);
 
+        var firmware = instance.TxtValue("version", "fw", "firmware", "fv");
         var device = CreateDevice(instance, model.Length > 0 ? model : "AXIS",
-            serial, mac, instance.TxtValue("version", "fw", "firmware"),
-            isNvr ? DeviceType.Recorder : DeviceType.Camera, properties);
+            serial, mac, firmware, deviceType, properties);
+
+        // Handle both IPv4 and IPv6 addresses
+        string? address = instance.Address?.ToString();
+        if (string.IsNullOrEmpty(address) && instance.Host.Length > 0)
+        {
+            // Try to resolve hostname
+            try { address = instance.Host; } catch { }
+        }
 
         return device with
         {
-            WebInterfaceUrl = Uri.TryCreate($"http://{instance.Address}/", UriKind.Absolute, out var uri) ? uri : null
+            WebInterfaceUrl = !string.IsNullOrEmpty(address) 
+                ? Uri.TryCreate($"http://{address}/", UriKind.Absolute, out var uri) ? uri : null
+                : null
         };
+    }
+
+    private static DeviceType InferDeviceType(string service, string model)
+    {
+        if (service.Contains("nvr", StringComparison.OrdinalIgnoreCase))
+            return DeviceType.Recorder;
+        if (service.Contains("audio", StringComparison.OrdinalIgnoreCase))
+            return DeviceType.Other; // Audio device
+        if (service.Contains("rtsp", StringComparison.OrdinalIgnoreCase))
+            return DeviceType.Camera;
+        if (service.Contains("disc", StringComparison.OrdinalIgnoreCase))
+            return DeviceType.Camera;
+        if (service.Contains("video", StringComparison.OrdinalIgnoreCase))
+            return DeviceType.Camera;
+
+        // Fallback: infer from model name
+        var lowerModel = model.ToLowerInvariant();
+        if (lowerModel.Contains("nvr") || lowerModel.Contains("recorder"))
+            return DeviceType.Recorder;
+        if (lowerModel.Contains("audio") || lowerModel.Contains("speaker"))
+            return DeviceType.Other;
+
+        return DeviceType.Camera;
     }
 
     private static string StripService(string name, string service)
@@ -62,12 +124,24 @@ public sealed class AxisMdnsDiscoveryProtocol : MdnsServiceDiscoveryProtocol
 
     internal static string NormalizeMac(string value)
     {
-        if (value.Length == 0) return "";
+        if (string.IsNullOrWhiteSpace(value)) return "";
 
-        var digits = new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
-        if (digits.Length != 12) return value;
+        // Extract only hex digits
+        var digits = new string(value.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToUpperInvariant();
+        
+        // Handle common MAC formats: 12 hex, 17 with colons/dashes
+        if (digits.Length == 12)
+        {
+            return string.Join(':', Enumerable.Range(0, 6).Select(i => digits.Substring(i * 2, 2)));
+        }
+        
+        // Already formatted with colons/dashes - normalize to colons
+        if (value.Contains(':') || value.Contains('-'))
+        {
+            return value.Replace('-', ':').ToUpperInvariant();
+        }
 
-        return string.Join(':', Enumerable.Range(0, 6).Select(i => digits.Substring(i * 2, 2)));
+        return value; // Return as-is if unrecognized format
     }
 }
 
