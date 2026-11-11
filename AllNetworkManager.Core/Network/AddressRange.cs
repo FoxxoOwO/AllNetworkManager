@@ -10,12 +10,17 @@ using System.Net.Sockets;
 public static class AddressRange
 {
     /// <summary>
-    /// Upper bound so a typo like 10.0.0.0/8 cannot start a 16 million host sweep. 1024 covers a /22,
-    /// which is the largest range that still finishes in a sensible time with 7 ports per address.
+    /// Default upper bound so a typo like 10.0.0.0/8 cannot start a 16 million host sweep.
+    /// Can be overridden via DiscoveryOptions.MaxActiveScanAddresses.
     /// </summary>
-    public const int MaxAddresses = 1024;
+    public const int DefaultMaxAddresses = 1024;
 
     public static bool TryParse(string? text, out IReadOnlyList<string> addresses, out string error)
+    {
+        return TryParse(text, DefaultMaxAddresses, out addresses, out error);
+    }
+
+    public static bool TryParse(string? text, int maxAddresses, out IReadOnlyList<string> addresses, out string error)
     {
         addresses = Array.Empty<string>();
         error = "";
@@ -28,10 +33,10 @@ public static class AddressRange
         }
 
         if (value.Contains('/'))
-            return TryParseCidr(value, out addresses, out error);
+            return TryParseCidr(value, maxAddresses, out addresses, out error);
 
         if (value.Contains('-'))
-            return TryParseDashRange(value, out addresses, out error);
+            return TryParseDashRange(value, maxAddresses, out addresses, out error);
 
         if (TryParseIPv4(value, out var single))
         {
@@ -44,7 +49,7 @@ public static class AddressRange
     }
 
     /// <summary>Number of hosts an address list would scan, without materializing it.</summary>
-    public static bool TryParseCidr(string text, out IReadOnlyList<string> addresses, out string error)
+    public static bool TryParseCidr(string text, int maxAddresses, out IReadOnlyList<string> addresses, out string error)
     {
         addresses = Array.Empty<string>();
         error = "";
@@ -65,9 +70,9 @@ public static class AddressRange
         var baseAddress = ToUInt(network);
         var count = prefix == 32 ? 1u : 1u << (32 - prefix);
         var hostCount = count <= 2 ? count : count - 2;
-        if (hostCount > MaxAddresses)
+        if (hostCount > maxAddresses)
         {
-            error = $"Podsíť /{prefix} má {hostCount} adres, maximum je {MaxAddresses}. Zadej menší rozsah.";
+            error = $"Podsíť /{prefix} má {hostCount} adres, maximum je {maxAddresses}. Zadej menší rozsah.";
             return false;
         }
 
@@ -81,7 +86,7 @@ public static class AddressRange
         return true;
     }
 
-    private static bool TryParseDashRange(string text, out IReadOnlyList<string> addresses, out string error)
+    private static bool TryParseDashRange(string text, int maxAddresses, out IReadOnlyList<string> addresses, out string error)
     {
         addresses = Array.Empty<string>();
         error = "";
@@ -117,9 +122,9 @@ public static class AddressRange
         }
 
         var total = end - start + 1;
-        if (total > MaxAddresses)
+        if (total > maxAddresses)
         {
-            error = $"Rozsah má {total} adres, maximum je {MaxAddresses}.";
+            error = $"Rozsah má {total} adres, maximum je {maxAddresses}.";
             return false;
         }
 
