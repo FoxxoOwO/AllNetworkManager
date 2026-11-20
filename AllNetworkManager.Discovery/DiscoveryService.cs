@@ -28,6 +28,12 @@ public class DiscoveryOptions
 
     /// <summary>Per-address probe budget during an active scan.</summary>
     public int ActiveScanTimeoutMs { get; set; } = 700;
+    
+    /// <summary>Maximum addresses to scan per subnet in active mode. Default 1024 (/22).</summary>
+    public int MaxActiveScanAddresses { get; set; } = 1024;
+    
+    /// <summary>Enable per-interface MNDP/SSDP/WS-Discovery scanning.</summary>
+    public bool EnablePerInterfaceScan { get; set; } = true;
 }
 
 public class DiscoveryService : IDiscoveryService
@@ -63,8 +69,7 @@ public class DiscoveryService : IDiscoveryService
     {
         var allDevices = new List<DiscoveredDevice>();
 
-        // Dedupe inside a single run only. Keeping this across runs used to make every scan after the
-        // first report zero devices (the dictionary was never cleared).
+        // Dedupe inside a single run only.
         var seen = new Dictionary<string, DiscoveredDevice>(StringComparer.OrdinalIgnoreCase);
         var count = Math.Max(targets.Count, 1);
 
@@ -79,8 +84,16 @@ public class DiscoveryService : IDiscoveryService
             {
                 if (AddressRange.TryParse(target, out var addresses, out var error))
                 {
-                    ReportProgress(target, allDevices.Count, i, count, $"Procházím {addresses.Count} adres");
-                    found.AddRange(await SweepAsync(addresses, ct).ConfigureAwait(false));
+                    // Limit the number of addresses to scan
+                    var addressesToScan = addresses.Take(_options.MaxActiveScanAddresses).ToList();
+                    if (addressesToScan.Count < addresses.Count)
+                    {
+                        _logger.LogInformation("Active scan limited to {Limit} of {Total} addresses in {Target}", 
+                            _options.MaxActiveScanAddresses, addresses.Count, target);
+                    }
+                    
+                    ReportProgress(target, allDevices.Count, i, count, $"Procházím {addressesToScan.Count} adres");
+                    found.AddRange(await SweepAsync(addressesToScan, ct).ConfigureAwait(false));
                 }
                 else
                 {
@@ -111,8 +124,8 @@ public class DiscoveryService : IDiscoveryService
     }
 
     /// <summary>
-    /// Probes every address on the active-scan ports. This is what finds devices that stay silent on
-    /// multicast (fixed IP, no SSDP/WS-Discovery, another VLAN), at the cost of a TCP sweep.
+    /// Probes every address on the active-scan ports. Uses batched parallel processing to avoid
+    /// creating too many tasks at once.
     /// </summary>
     private async Task<IReadOnlyList<DiscoveredDevice>> SweepAsync(
         IReadOnlyList<string> addresses, CancellationToken ct)
@@ -124,56 +137,61 @@ public class DiscoveryService : IDiscoveryService
         var ports = _options.ActiveScanPorts;
         var timeoutMs = Math.Max(100, _options.ActiveScanTimeoutMs);
 
-        var probes = addresses.Select(async ip =>
-        {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(TimeSpan.FromMilliseconds(timeoutMs));
+        // Process in batches to avoid creating too many tasks at once
+        const int batchSize = 100;
+        var allTasks = new List<Task>();
 
-                foreach (var port in ports)
+        for (int batchStart = 0; batchStart < addresses.Count; batchStart += batchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+            
+            var batch = addresses.Skip(batchStart).Take(batchSize).ToList();
+            var batchTasks = batch.Select(async ip =>
+            {
+                await gate.WaitAsync(ct).ConfigureAwait(false);
+                try
                 {
-                    foreach (var protocol in _protocols.Where(p => p.SupportsPort(port)))
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(TimeSpan.FromMilliseconds(timeoutMs));
+
+                    foreach (var port in ports)
                     {
-                        try
+                        foreach (var protocol in _protocols.Where(p => p.SupportsPort(port)))
                         {
-                            var device = await protocol.ProbeAsync(ip, port, timeout.Token).ConfigureAwait(false);
-                            if (device != null)
+                            try
                             {
-                                results.Add(device);
+                                var device = await protocol.ProbeAsync(ip, port, timeout.Token).ConfigureAwait(false);
+                                if (device != null)
+                                {
+                                    results.Add(device);
+                                    return;
+                                }
+                            }
+                            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                            {
                                 return;
                             }
-                        }
-                        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                        {
-                            // this address did not answer in time, move on
-                            return;
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogDebug(ex, "Probe {Ip}:{Port} via {Protocol} failed", ip, port, protocol.ProtocolName);
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogDebug(ex, "Probe {Ip}:{Port} via {Protocol} failed", ip, port, protocol.ProtocolName);
+                            }
                         }
                     }
                 }
-            }
-            finally
-            {
-                gate.Release();
-            }
-        }).ToList();
+                finally
+                {
+                    gate.Release();
+                }
+            }).ToList();
 
-        try
-        {
-            await Task.WhenAll(probes).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // the caller cancelled the scan; whatever was already found is still useful
+            allTasks.AddRange(batchTasks);
+            
+            // Wait for this batch to complete before starting the next
+            await Task.WhenAll(batchTasks).ConfigureAwait(false);
         }
 
         return results.ToList();
@@ -187,6 +205,41 @@ public class DiscoveryService : IDiscoveryService
         var results = await Task.WhenAll(scans);
 
         var allDevices = results.SelectMany(r => r).ToList();
+
+        // Also do per-interface scanning for multicast protocols (SSDP, WS-Discovery, MNDP)
+        if (_options.EnablePerInterfaceScan)
+        {
+            var localInterfaces = GetLocalInterfacesWithIpv4();
+            foreach (var (iface, localIp) in localInterfaces)
+            {
+                ct.ThrowIfCancellationRequested();
+                // Run multicast protocols on this specific interface
+                var multicastProtocols = _protocols.Where(p => 
+                    p.ProtocolName.Contains("SSDP") || 
+                    p.ProtocolName.Contains("WS-Discovery") || 
+                    p.ProtocolName.Contains("MNDP"));
+                
+                foreach (var protocol in multicastProtocols)
+                {
+                    try
+                    {
+                        // The protocol's ScanAsync uses the subnet to bind to the right interface
+                        // but we can also call ProbeAsync directly for the multicast address
+                        var devices = await protocol.ScanAsync(subnet, ct);
+                        foreach (var d in devices)
+                        {
+                            if (!allDevices.Any(x => x.IpAddress == d.IpAddress))
+                                allDevices.Add(d);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Per-interface scan failed for {Protocol} on {Interface}", 
+                            protocol.ProtocolName, iface.Name);
+                    }
+                }
+            }
+        }
 
         if (_options.EnablePortScan)
         {
@@ -264,6 +317,8 @@ public class DiscoveryService : IDiscoveryService
         foreach (var ni in netInterfaces.Where(n => n.OperationalStatus == OperationalStatus.Up 
             && n.NetworkInterfaceType != NetworkInterfaceType.Loopback))
         {
+            ct.ThrowIfCancellationRequested();
+            
             var props = ni.GetIPProperties();
             foreach (var addr in props.UnicastAddresses.Where(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
             {
@@ -273,12 +328,34 @@ public class DiscoveryService : IDiscoveryService
                 {
                     var network = GetNetworkAddress(ip, mask);
                     var cidr = GetCidr(mask);
-                    subnets.Add($"{network}/{cidr}");
+                    var subnetStr = $"{network}/{cidr}";
+                    if (!subnets.Contains(subnetStr))
+                        subnets.Add(subnetStr);
                 }
             }
         }
 
+        _logger.LogInformation("Auto-detected subnets: {Subnets}", string.Join(", ", subnets));
         return subnets.Distinct().ToArray();
+    }
+
+    private List<(System.Net.NetworkInformation.NetworkInterface Interface, IPAddress Ip)> GetLocalInterfacesWithIpv4()
+    {
+        var result = new List<(System.Net.NetworkInformation.NetworkInterface, IPAddress)>();
+        var netInterfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
+
+        foreach (var ni in netInterfaces.Where(n => n.OperationalStatus == OperationalStatus.Up 
+            && n.NetworkInterfaceType != NetworkInterfaceType.Loopback))
+        {
+            var props = ni.GetIPProperties();
+            foreach (var addr in props.UnicastAddresses.Where(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
+            {
+                result.Add((ni, addr.Address));
+                break; // Only need one IPv4 per interface
+            }
+        }
+
+        return result;
     }
 
     private IPAddress GetNetworkAddress(IPAddress ip, IPAddress mask)
@@ -316,9 +393,11 @@ public class DiscoveryService : IDiscoveryService
         if (prefixLen is < 8 or > 30) yield break;
 
         var hostBits = 32 - prefixLen;
-        var count = Math.Min(1 << hostBits, 256); // Limit to /24 max
+        var maxAddresses = _options.MaxActiveScanAddresses > 0 ? _options.MaxActiveScanAddresses : (1 << hostBits);
+        var count = Math.Min(1 << hostBits, maxAddresses);
         
-        for (int i = 1; i < count - 1; i++) // Skip network and broadcast
+        // Skip network address (0) and broadcast address (count-1)
+        for (int i = 1; i < count - 1; i++)
         {
             var addrBytes = (byte[])ipBytes.Clone();
             var val = i;

@@ -40,6 +40,7 @@ public static class DiscoveryServiceCollectionExtensions
         services.AddSingleton<IDiscoveryProtocol, VivotekDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryProtocol, UbiquitiDiscoveryProtocol>();
         services.AddSingleton<IDiscoveryProtocol, HanwhaDiscoveryProtocol>();
+        services.AddSingleton<IDiscoveryProtocol, BoschDiscoveryProtocol>();
 
         // text/XML based vendor protocols
         services.AddSingleton<IDiscoveryProtocol, MsSqlBrowserDiscoveryProtocol>();

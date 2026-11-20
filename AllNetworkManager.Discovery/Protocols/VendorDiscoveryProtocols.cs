@@ -490,7 +490,7 @@ public sealed class UbiquitiDiscoveryProtocol : UdpDiscoveryProtocolBase
     }
 }
 
-/// <summary>Hanwha (Samsung) Techwin: 16-byte request on 7701, fixed-layout reply to port 7711.</summary>
+/// <summary>Hanwha (Samsung) Techwin: 16-byte request on 7701, fixed-layout reply to port 7711 (SUNAPI Discovery).</summary>
 public sealed class HanwhaDiscoveryProtocol : UdpDiscoveryProtocolBase
 {
     private const int RequestPortNumber = 7701;
@@ -498,9 +498,18 @@ public sealed class HanwhaDiscoveryProtocol : UdpDiscoveryProtocolBase
     private const byte RequestType = 0x01;
     private const byte ReplyType = 0x0b;
 
+    // Reply header structure (from UniversalScanner reference)
+    private const int MacOffset = 0x13; // 18 bytes (String18bytes)
+    private const int IpOffset = 0x25;   // 16 bytes (String16bytes)
+    private const int MaskOffset = 0x35; // 16 bytes
+    private const int GatewayOffset = 0x45; // 16 bytes
+    private const int DeviceTypeOffset = 0x6D; // 10 bytes (String10bytes)
+    private const int UrlOffset = 0x85;  // 39 bytes (String39bytes)
+    private const int MinReplySize = 0x106;
+
     public HanwhaDiscoveryProtocol(ILogger<HanwhaDiscoveryProtocol> logger) : base(logger) { }
 
-    public override string ProtocolName => "Hanwha Techwin";
+    public override string ProtocolName => "Hanwha Techwin (SUNAPI)";
     protected override string VendorName => "Hanwha";
     protected override int RequestPort => RequestPortNumber;
     protected override int? ReplyPort => AnswerPortNumber;
@@ -509,19 +518,20 @@ public sealed class HanwhaDiscoveryProtocol : UdpDiscoveryProtocolBase
     {
         var request = new byte[16];
         request[0] = RequestType;
+        // Rest is zero-filled - matches UniversalScanner implementation
         return request;
     }
 
     protected override void Parse(byte[] data, IPEndPoint from, List<DiscoveredDevice> found)
     {
-        if (data.Length < 0xA0 || data[0] != ReplyType) return;
+        if (data.Length < MinReplySize || data[0] != ReplyType) return;
 
-        var mac = FixedString(data, 0x13, 17);
-        var ip = FixedString(data, 0x25, 16);
-        var mask = FixedString(data, 0x35, 16);
-        var gateway = FixedString(data, 0x45, 16);
-        var model = FixedString(data, 0x6d, 32);
-        var webUrl = FixedString(data, 0x85, 64);
+        var mac = FixedString(data, MacOffset, 18).Replace('-', ':').ToUpperInvariant();
+        var ip = FixedString(data, IpOffset, 16);
+        var mask = FixedString(data, MaskOffset, 16);
+        var gateway = FixedString(data, GatewayOffset, 16);
+        var model = FixedString(data, DeviceTypeOffset, 10);
+        var webUrl = FixedString(data, UrlOffset, 39);
 
         if (!IPAddress.TryParse(ip, out _)) ip = from.Address.ToString();
 
@@ -532,7 +542,7 @@ public sealed class HanwhaDiscoveryProtocol : UdpDiscoveryProtocolBase
             ["webInterface"] = webUrl
         };
 
-        var device = Device(ip, model.Length > 0 ? model : "Hanwha", "", mac.Replace('-', ':').ToUpperInvariant(),
+        var device = Device(ip, model.Length > 0 ? model : "Hanwha", "", mac,
             null, properties);
 
         found.Add(device with
